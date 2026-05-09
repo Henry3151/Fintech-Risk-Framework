@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 """
-test_fraud.py — Testes automatizados da API.
+test_fraud.py - Testes automatizados da API.
 Uso: pytest tests/test_fraud.py -v
 """
 import pytest
@@ -15,20 +16,22 @@ LEGIT = {
     "V26": -0.03, "V27": -0.07, "V28": -0.06,
 }
 SUSPICIOUS = {
-    "Time": 406.0, "Amount": 2125.87,
-    "V1": -3.04, "V2": -3.16, "V3": 1.09, "V4": 2.29, "V5": -3.43,
-    "V6": -1.22, "V7": -4.49, "V8": 1.30, "V9": -2.38, "V10": -4.91,
-    "V11": 3.26, "V12": -5.26, "V13": -0.01, "V14": -5.26, "V15": 0.02,
-    "V16": -1.77, "V17": -8.70, "V18": -0.54, "V19": -0.02, "V20": -0.14,
-    "V21": 0.04, "V22": 0.62, "V23": 0.07, "V24": 0.57, "V25": 0.42,
-    "V26": -0.03, "V27": 0.32, "V28": 0.04,
+    # Fraude real do dataset ULB (linha 492, Class=1)
+    "Time": 406.0, "Amount": 0.0,
+    "V1": -2.3122, "V2": 1.9520, "V3": -1.6099, "V4": 3.9979, "V5": -0.5222,
+    "V6": -1.4265, "V7": -2.5374, "V8": 1.3917, "V9": -2.7701, "V10": -2.7723,
+    "V11": 3.2020, "V12": -2.8999, "V13": -0.5952, "V14": -4.2893, "V15": 0.3897,
+    "V16": -1.1407, "V17": -2.8301, "V18": -0.0168, "V19": 0.4170, "V20": 0.1269,
+    "V21": 0.5172, "V22": -0.0350, "V23": -0.4652, "V24": 0.3202, "V25": 0.0445,
+    "V26": 0.1778, "V27": 0.2611, "V28": -0.1433,
 }
 
 @pytest.fixture(scope="module")
 def client():
     try:
         from src.api.main import app
-        return TestClient(app)
+        with TestClient(app) as c:
+            yield c
     except Exception as e:
         pytest.skip(f"Modelos nao encontrados. Treine antes. Erro: {e}")
 

@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 """
-main.py � API FastAPI de deteccao de fraude em tempo real.
+main.py - API FastAPI de deteccao de fraude em tempo real.
 Uso: uvicorn src.api.main:app --reload --port 8000
 """
 import json, time, joblib, numpy as np, torch, sys
@@ -60,8 +61,10 @@ class TransactionInput(BaseModel):
         return v
 
     def to_array(self):
-        return np.array([getattr(self, f"V{i}") for i in range(1, 29)] +
-                        [self.Amount, self.Time], dtype=np.float32)
+        # Ordem deve bater com make_dataset.py: Time, V1-V28, Amount
+        return np.array([self.Time] +
+                        [getattr(self, f"V{i}") for i in range(1, 29)] +
+                        [self.Amount], dtype=np.float32)
 
 class FraudResponse(BaseModel):
     fraud_probability: float
@@ -87,7 +90,8 @@ def predict_single(transaction):
     t0 = time.perf_counter()
     raw = transaction.to_array().reshape(1, -1)
     scaled = raw.copy()
-    scaled[:, -2:] = store.scaler.transform(raw[:, -2:])
+    # Time=índice 0, Amount=índice -1 — mesma ordem do make_dataset.py
+    scaled[:, [0, -1]] = store.scaler.transform(raw[:, [0, -1]])
     with torch.no_grad():
         recon_error = float(store.autoencoder.reconstruction_error(torch.tensor(scaled)).item())
     X_enriched = np.column_stack([scaled, [[recon_error]]])

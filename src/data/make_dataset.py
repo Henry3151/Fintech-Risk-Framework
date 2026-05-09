@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 """
-make_dataset.py — Carrega o CSV bruto e gera os splits de treino/teste.
+make_dataset.py - Carrega o CSV bruto e gera os splits de treino/teste.
 Uso: python src/data/make_dataset.py
 """
 import os, joblib, numpy as np, pandas as pd
@@ -43,7 +44,7 @@ def split_data(df, test_size=0.2, random_state=42):
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, stratify=y, random_state=random_state)
     X_train_legit = X_train[y_train == 0]
-    print(f"    Treino: {X_train.shape[0]:,} | Legítimas: {X_train_legit.shape[0]:,} | Fraudes: {y_train.sum():,}")
+    print(f"    Treino: {X_train.shape[0]:,} | Legitimas: {X_train_legit.shape[0]:,} | Fraudes: {y_train.sum():,}")
     print(f"    Teste : {X_test.shape[0]:,}")
     return X_train, X_test, y_train, y_test, X_train_legit
 

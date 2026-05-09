@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 """
-train_classifier.py — XGBoost supervisionado com SMOTE + anomaly score.
+train_classifier.py - XGBoost supervisionado com SMOTE + anomaly score.
 Uso: python src/models/train_classifier.py
 """
 import json, joblib, numpy as np, torch, xgboost as xgb, sys

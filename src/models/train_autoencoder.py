@@ -1,6 +1,8 @@
+# -*- coding: utf-8 -*-
 """
-train_autoencoder.py — Treina Autoencoder com transacoes legitimas.
-Uso: python src/models/train_autoencoder.py
+train_autoencoder.py
+Treina Autoencoder com transacoes legitimas.
+...
 """
 import json, numpy as np, torch, torch.nn as nn
 from pathlib import Path

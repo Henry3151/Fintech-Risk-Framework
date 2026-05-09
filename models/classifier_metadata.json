@@ -1,0 +1,9 @@
+{
+  "model": "XGBoostClassifier",
+  "pr_auc": 0.8665,
+  "best_threshold": 0.9913937449455261,
+  "autoencoder_threshold": 0.867061197757721,
+  "n_estimators_best": 497,
+  "feature_dim": 31,
+  "model_version": "autoencoder_v1"
+}

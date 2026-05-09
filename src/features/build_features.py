@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 """
-build_features.py — SMOTE para balancear o treino.
+build_features.py - SMOTE para balancear o treino.
 """
 import numpy as np
 from imblearn.over_sampling import SMOTE

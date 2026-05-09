@@ -1,0 +1,13 @@
+{
+  "pythonVersion": "3.11",
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["src"],
+  "exclude": [
+    "data/",
+    "models/",
+    "mlruns/"
+  ],
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none"
+}
