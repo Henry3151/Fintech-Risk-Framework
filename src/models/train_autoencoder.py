@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-train_autoencoder.py
-Treina Autoencoder com transacoes legitimas.
-...
+train_autoencoder.py - Treina Autoencoder com transacoes legitimas.
 """
-import json, numpy as np, torch, torch.nn as nn
+import json, numpy as np, torch, torch.nn as nn, mlflow, mlflow.pytorch
 from pathlib import Path
 from torch.utils.data import DataLoader, TensorDataset
 
 ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = ROOT / "data" / "processed"
-MODELS_DIR = ROOT / "models"
+MODELS_DIR    = ROOT / "models"
 
 class FraudAutoencoder(nn.Module):
     def __init__(self, input_dim=30):
@@ -41,62 +39,87 @@ def train(epochs=50, batch_size=256, lr=1e-3, patience=7, device="cpu"):
     X_val, X_tr = X_legit[:val_size], X_legit[val_size:]
     print(f"  Treino: {len(X_tr):,} | Validacao: {len(X_val):,} | Device: {device}")
 
-    tr_loader = DataLoader(TensorDataset(torch.tensor(X_tr)), batch_size=batch_size, shuffle=True)
+    tr_loader   = DataLoader(TensorDataset(torch.tensor(X_tr)), batch_size=batch_size, shuffle=True)
     val_tensor  = torch.tensor(X_val).to(device)
     test_tensor = torch.tensor(X_test).to(device)
 
-    model = FraudAutoencoder(input_dim=X_legit.shape[1]).to(device)
+    model     = FraudAutoencoder(input_dim=X_legit.shape[1]).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
-    best_val_loss, patience_counter, epoch = float("inf"), 0, 0
-    for epoch in range(1, epochs + 1):
-        model.train()
-        train_loss = 0.0
-        for (batch,) in tr_loader:
-            batch = batch.to(device)
-            optimizer.zero_grad()
-            loss = criterion(model(batch), batch)
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item() * len(batch)
-        train_loss /= len(X_tr)
+    mlflow.set_experiment("fraud-detection")
+    with mlflow.start_run(run_name="autoencoder"):
 
+        mlflow.log_params({
+            "model":      "FraudAutoencoder",
+            "input_dim":  X_legit.shape[1],
+            "epochs":     epochs,
+            "batch_size": batch_size,
+            "lr":         lr,
+            "patience":   patience,
+            "device":     device,
+        })
+
+        best_val_loss, patience_counter, epoch = float("inf"), 0, 0
+        for epoch in range(1, epochs + 1):
+            model.train()
+            train_loss = 0.0
+            for (batch,) in tr_loader:
+                batch = batch.to(device)
+                optimizer.zero_grad()
+                loss = criterion(model(batch), batch)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item() * len(batch)
+            train_loss /= len(X_tr)
+
+            model.eval()
+            with torch.no_grad():
+                val_loss = criterion(model(val_tensor), val_tensor).item()
+
+            mlflow.log_metrics({"train_loss": train_loss, "val_loss": val_loss}, step=epoch)
+
+            if epoch % 10 == 0 or epoch == 1:
+                print(f"  Epoch {epoch:03d}/{epochs} | train={train_loss:.6f} | val={val_loss:.6f}")
+
+            if val_loss < best_val_loss:
+                best_val_loss, patience_counter = val_loss, 0
+                torch.save(model.state_dict(), MODELS_DIR / "autoencoder_best.pt")
+            else:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    print(f"\n  Early stopping na epoch {epoch}.")
+                    break
+
+        model.load_state_dict(torch.load(MODELS_DIR / "autoencoder_best.pt", map_location=device))
         model.eval()
         with torch.no_grad():
-            val_loss = criterion(model(val_tensor), val_tensor).item()
+            test_errors = model.reconstruction_error(test_tensor).numpy()
 
-        if epoch % 10 == 0 or epoch == 1:
-            print(f"  Epoch {epoch:03d}/{epochs} | train={train_loss:.6f} | val={val_loss:.6f}")
+        threshold = float(np.percentile(test_errors[y_test == 0], 95))
+        print(f"\n  Threshold (p95): {threshold:.6f}")
 
-        if val_loss < best_val_loss:
-            best_val_loss, patience_counter = val_loss, 0
-            torch.save(model.state_dict(), MODELS_DIR / "autoencoder_best.pt")
-        else:
-            patience_counter += 1
-            if patience_counter >= patience:
-                print(f"\n  Early stopping na epoch {epoch}.")
-                break
+        from sklearn.metrics import classification_report, average_precision_score
+        ap = average_precision_score(y_test, test_errors)
+        print(f"  PR-AUC: {ap:.4f}")
+        print(classification_report(y_test, (test_errors > threshold).astype(int),
+                                    target_names=["Legitima", "Fraude"]))
 
-    model.load_state_dict(torch.load(MODELS_DIR / "autoencoder_best.pt", map_location=device))
-    model.eval()
-    with torch.no_grad():
-        test_errors = model.reconstruction_error(test_tensor).numpy()
+        mlflow.log_metrics({
+            "pr_auc":         round(ap, 4),
+            "threshold_p95":  round(threshold, 6),
+            "best_val_loss":  round(best_val_loss, 6),
+            "epochs_trained": epoch,
+        })
 
-    threshold = float(np.percentile(test_errors[y_test == 0], 95))
-    print(f"\n  Threshold (p95): {threshold:.6f}")
+        torch.save(model.state_dict(), MODELS_DIR / "autoencoder.pt")
+        mlflow.log_artifact(str(MODELS_DIR / "autoencoder.pt"),          artifact_path="model")
 
-    from sklearn.metrics import classification_report, average_precision_score
-    ap = average_precision_score(y_test, test_errors)
-    print(f"  PR-AUC: {ap:.4f}")
-    print(classification_report(y_test, (test_errors > threshold).astype(int),
-                                target_names=["Legitima", "Fraude"]))
-
-    torch.save(model.state_dict(), MODELS_DIR / "autoencoder.pt")
-    json.dump({"model": "FraudAutoencoder", "input_dim": int(X_legit.shape[1]),
-               "threshold": threshold, "pr_auc": round(ap, 4),
-               "best_val_loss": round(best_val_loss, 6), "epochs_trained": epoch},
-              open(MODELS_DIR / "autoencoder_metadata.json", "w"), indent=2)
+        metadata = {"model": "FraudAutoencoder", "input_dim": int(X_legit.shape[1]),
+                    "threshold": threshold, "pr_auc": round(ap, 4),
+                    "best_val_loss": round(best_val_loss, 6), "epochs_trained": epoch}
+        json.dump(metadata, open(MODELS_DIR / "autoencoder_metadata.json", "w"), indent=2)
+        mlflow.log_artifact(str(MODELS_DIR / "autoencoder_metadata.json"), artifact_path="model")
 
     print(f"\n  Modelo salvo: {MODELS_DIR / 'autoencoder.pt'}")
     print("=" * 55)

@@ -1,8 +1,8 @@
 {
   "model": "FraudAutoencoder",
   "input_dim": 30,
-  "threshold": 0.867061197757721,
-  "pr_auc": 0.4725,
-  "best_val_loss": 0.397576,
-  "epochs_trained": 42
+  "threshold": 0.8249934315681458,
+  "pr_auc": 0.4603,
+  "best_val_loss": 0.394495,
+  "epochs_trained": 50
 }
