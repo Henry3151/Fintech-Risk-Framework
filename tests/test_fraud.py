@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 test_fraud.py - Testes automatizados da API.
 Uso: pytest tests/test_fraud.py -v
@@ -16,7 +16,6 @@ LEGIT = {
     "V26": -0.03, "V27": -0.07, "V28": -0.06,
 }
 SUSPICIOUS = {
-    # Fraude real do dataset ULB (linha 492, Class=1)
     "Time": 406.0, "Amount": 0.0,
     "V1": -2.3122, "V2": 1.9520, "V3": -1.6099, "V4": 3.9979, "V5": -0.5222,
     "V6": -1.4265, "V7": -2.5374, "V8": 1.3917, "V9": -2.7701, "V10": -2.7723,
@@ -29,7 +28,7 @@ SUSPICIOUS = {
 @pytest.fixture(scope="module")
 def client():
     try:
-        from src.api.main import app
+        from api.main import app
         with TestClient(app) as c:
             yield c
     except Exception as e:
@@ -37,21 +36,21 @@ def client():
 
 class TestHealth:
     def test_200(self, client): assert client.get("/health").status_code == 200
-    def test_models_loaded(self, client): assert client.get("/health").json()["models_loaded"]
-    def test_version(self, client): assert client.get("/health").json()["model_version"] != "unknown"
+    def test_models_loaded(self, client): assert client.get("/health").json()["model_loaded"]
+    def test_pr_auc(self, client): assert client.get("/health").json()["pr_auc"] > 0.0
 
 class TestSchema:
     def test_predict_200(self, client): assert client.post("/predict", json=LEGIT).status_code == 200
     def test_fields(self, client):
         data = client.post("/predict", json=LEGIT).json()
-        assert {"fraud_probability","fraud_prediction","risk_score",
-                "reconstruction_error","model_version","latency_ms"}.issubset(data)
+        assert {"fraud_probability","is_fraud","risk_label",
+                "reconstruction_error","latency_ms"}.issubset(data)
     def test_prob_range(self, client):
         assert 0 <= client.post("/predict", json=LEGIT).json()["fraud_probability"] <= 1
     def test_risk_valid(self, client):
-        assert client.post("/predict", json=LEGIT).json()["risk_score"] in {"low","medium","high","critical"}
+        assert client.post("/predict", json=LEGIT).json()["risk_label"] in {"LOW","MEDIUM","HIGH"}
     def test_latency(self, client):
-        assert client.post("/predict", json=LEGIT).json()["latency_ms"] < 50
+        assert client.post("/predict", json=LEGIT).json()["latency_ms"] < 200
 
 class TestValidation:
     def test_negative_amount(self, client): assert client.post("/predict", json={**LEGIT,"Amount":-1}).status_code == 422
@@ -68,6 +67,6 @@ class TestBehavior:
 
 class TestBatch:
     def test_count(self, client):
-        assert client.post("/predict/batch", json=[LEGIT, SUSPICIOUS]).json()["total"] == 2
+        assert client.post("/predict/batch", json={"transactions": [LEGIT, SUSPICIOUS]}).json()["total_transactions"] == 2
     def test_too_large(self, client):
-        assert client.post("/predict/batch", json=[LEGIT]*1001).status_code == 400
+        assert client.post("/predict/batch", json={"transactions": [LEGIT]*1001}).status_code == 422

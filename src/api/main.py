@@ -1,129 +1,148 @@
-# -*- coding: utf-8 -*-
 """
-main.py - API FastAPI de deteccao de fraude em tempo real.
-Uso: uvicorn src.api.main:app --reload --port 8000
+FastAPI application — /predict  /predict/batch  /health
+
+All business logic lives in use cases; this file only handles
+HTTP wiring, serialization, and error mapping.
 """
-import json, time, joblib, numpy as np, torch, sys
-from pathlib import Path
-from contextlib import asynccontextmanager
-from typing import Optional
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from __future__ import annotations
 
-ROOT = Path(__file__).resolve().parents[2]
-MODELS_DIR = ROOT / "models"
-sys.path.insert(0, str(ROOT / "src"))
-from models.train_autoencoder import FraudAutoencoder
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 
-class ModelStore:
-    autoencoder: Optional[FraudAutoencoder] = None
-    classifier = None
-    scaler = None
-    ae_metadata: dict = {}
-    clf_metadata: dict = {}
+from api.dependencies import (
+    get_predict_fraud_use_case,
+    get_predict_fraud_batch_use_case,
+    get_model_metrics_use_case,
+)
+from api.schemas import (
+    TransactionRequest,
+    BatchTransactionRequest,
+    PredictionResponse,
+    BatchPredictionResponse,
+    HealthResponse,
+)
+from domain.entities.transaction import Transaction
+from domain.exceptions import ValidationError, InferenceError, ModelNotLoadedError
+from use_cases.predict_fraud import PredictFraud
+from use_cases.predict_fraud_batch import PredictFraudBatch
+from use_cases.get_model_metrics import GetModelMetrics
 
-store = ModelStore()
-
-def load_models():
-    print("[API] Carregando modelos ...")
-    store.scaler = joblib.load(MODELS_DIR / "preprocessor.joblib")
-    store.ae_metadata = json.load(open(MODELS_DIR / "autoencoder_metadata.json"))
-    store.autoencoder = FraudAutoencoder(input_dim=store.ae_metadata["input_dim"])
-    store.autoencoder.load_state_dict(torch.load(MODELS_DIR / "autoencoder.pt", map_location="cpu"))
-    store.autoencoder.eval()
-    store.classifier = joblib.load(MODELS_DIR / "classifier.joblib")
-    store.clf_metadata = json.load(open(MODELS_DIR / "classifier_metadata.json"))
-    print(f"[API] Pronto. Versao: {store.clf_metadata.get('model_version')}")
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    load_models()
-    yield
 
 app = FastAPI(
-    title="Credit Card Fraud Detection API",
-    description="Pipeline hibrido: Autoencoder (anomaly detection) + XGBoost (supervisionado).",
-    version="1.0.0", lifespan=lifespan)
+    title="Fraud Detection API",
+    description="Hybrid Autoencoder + XGBoost fraud detection. PR-AUC 0.8665.",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
 
-class TransactionInput(BaseModel):
-    Time: float; Amount: float = Field(..., ge=0)
-    V1: float; V2: float; V3: float; V4: float; V5: float
-    V6: float; V7: float; V8: float; V9: float; V10: float
-    V11: float; V12: float; V13: float; V14: float; V15: float
-    V16: float; V17: float; V18: float; V19: float; V20: float
-    V21: float; V22: float; V23: float; V24: float; V25: float
-    V26: float; V27: float; V28: float
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    @field_validator("Amount")
-    @classmethod
-    def amount_positive(cls, v):
-        if v < 0: raise ValueError("Amount deve ser >= 0")
-        return v
 
-    def to_array(self):
-        # Ordem deve bater com make_dataset.py: Time, V1-V28, Amount
-        return np.array([self.Time] +
-                        [getattr(self, f"V{i}") for i in range(1, 29)] +
-                        [self.Amount], dtype=np.float32)
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-class FraudResponse(BaseModel):
-    fraud_probability: float
-    fraud_prediction: bool
-    risk_score: str
-    reconstruction_error: float
-    model_version: str
-    latency_ms: float
+def _to_transaction(req: TransactionRequest) -> Transaction:
+    return Transaction.from_dict(req.model_dump(), transaction_id=req.transaction_id)
 
-class BatchResponse(BaseModel):
-    results: list[FraudResponse]
-    total: int
-    fraud_count: int
-    latency_ms: float
 
-def classify_risk(prob):
-    if prob < 0.3: return "low"
-    if prob < 0.6: return "medium"
-    if prob < 0.85: return "high"
-    return "critical"
+def _to_response(prediction) -> PredictionResponse:
+    return PredictionResponse(
+        transaction_id=prediction.transaction_id,
+        fraud_probability=prediction.fraud_probability,
+        is_fraud=prediction.is_fraud,
+        risk_label=prediction.risk_label,
+        reconstruction_error=prediction.reconstruction_error,
+        latency_ms=prediction.latency_ms,
+    )
 
-def predict_single(transaction):
-    t0 = time.perf_counter()
-    raw = transaction.to_array().reshape(1, -1)
-    scaled = raw.copy()
-    # Time=índice 0, Amount=índice -1 — mesma ordem do make_dataset.py
-    scaled[:, [0, -1]] = store.scaler.transform(raw[:, [0, -1]])
-    with torch.no_grad():
-        recon_error = float(store.autoencoder.reconstruction_error(torch.tensor(scaled)).item())
-    X_enriched = np.column_stack([scaled, [[recon_error]]])
-    prob = float(store.classifier.predict_proba(X_enriched)[0, 1])
-    is_fraud = prob >= store.clf_metadata["best_threshold"]
-    return FraudResponse(
-        fraud_probability=round(prob, 4), fraud_prediction=is_fraud,
-        risk_score=classify_risk(prob), reconstruction_error=round(recon_error, 6),
-        model_version=store.clf_metadata.get("model_version", "v1"),
-        latency_ms=round((time.perf_counter() - t0) * 1000, 2))
 
-@app.post("/predict", response_model=FraudResponse)
-async def predict(transaction: TransactionInput):
+def _handle_domain_errors(exc: Exception) -> HTTPException:
+    if isinstance(exc, ValidationError):
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    if isinstance(exc, ModelNotLoadedError):
+        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    if isinstance(exc, InferenceError):
+        return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+    return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@app.post(
+    "/predict",
+    response_model=PredictionResponse,
+    summary="Single transaction fraud prediction",
+    tags=["Inference"],
+)
+async def predict(
+    request: TransactionRequest,
+    use_case: PredictFraud = Depends(get_predict_fraud_use_case),
+) -> PredictionResponse:
     try:
-        return predict_single(transaction)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        transaction = _to_transaction(request)
+        prediction = use_case.execute(transaction)
+        return _to_response(prediction)
+    except (ValidationError, InferenceError, ModelNotLoadedError) as exc:
+        raise _handle_domain_errors(exc)
 
-@app.post("/predict/batch", response_model=BatchResponse)
-async def predict_batch(transactions: list[TransactionInput]):
-    if len(transactions) > 1000:
-        raise HTTPException(status_code=400, detail="Maximo de 1000 transacoes por lote.")
-    t0 = time.perf_counter()
-    results = [predict_single(t) for t in transactions]
-    return BatchResponse(results=results, total=len(results),
-                         fraud_count=sum(r.fraud_prediction for r in results),
-                         latency_ms=round((time.perf_counter() - t0) * 1000, 2))
 
-@app.get("/health")
-async def health():
-    ok = all([store.autoencoder, store.classifier, store.scaler])
-    return {"status": "healthy" if ok else "degraded", "models_loaded": ok,
-            "model_version": store.clf_metadata.get("model_version", "unknown"),
-            "autoencoder_pr_auc": store.ae_metadata.get("pr_auc"),
-            "classifier_pr_auc": store.clf_metadata.get("pr_auc")}
+@app.post(
+    "/predict/batch",
+    response_model=BatchPredictionResponse,
+    summary="Batch transaction fraud prediction (max 1 000)",
+    tags=["Inference"],
+)
+async def predict_batch(
+    request: BatchTransactionRequest,
+    use_case: PredictFraudBatch = Depends(get_predict_fraud_batch_use_case),
+) -> BatchPredictionResponse:
+    try:
+        transactions = [_to_transaction(r) for r in request.transactions]
+        predictions = use_case.execute(transactions)
+    except (ValidationError, InferenceError, ModelNotLoadedError) as exc:
+        raise _handle_domain_errors(exc)
+
+    responses = [_to_response(p) for p in predictions]
+    return BatchPredictionResponse(
+        predictions=responses,
+        total_transactions=len(responses),
+        fraud_count=sum(1 for p in responses if p.is_fraud),
+        total_latency_ms=sum(p.latency_ms for p in responses),
+    )
+
+
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Model health and metadata",
+    tags=["Operations"],
+)
+async def health(
+    use_case: GetModelMetrics = Depends(get_model_metrics_use_case),
+) -> HealthResponse:
+    try:
+        metrics = use_case.execute()
+        return HealthResponse(
+            status="ok",
+            model_loaded=True,
+            pr_auc=metrics.pr_auc,
+            classifier_threshold=metrics.classifier_threshold,
+            autoencoder_threshold=metrics.autoencoder_threshold,
+        )
+    except Exception:
+        return HealthResponse(
+            status="degraded",
+            model_loaded=False,
+            pr_auc=0.0,
+            classifier_threshold=0.0,
+            autoencoder_threshold=0.0,
+        )
