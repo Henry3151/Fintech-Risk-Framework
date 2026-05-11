@@ -4,21 +4,23 @@
 
 ![Python](https://img.shields.io/badge/Python-3.14+-blue?logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.3-orange?logo=pytorch&logoColor=white)
+![LightGBM](https://img.shields.io/badge/LightGBM-4.6-green)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-teal?logo=fastapi&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-41%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-55%20passed-brightgreen)
 ![Architecture](https://img.shields.io/badge/architecture-Clean%20Architecture-purple)
 ![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker&logoColor=white)
+![OS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 
 ---
 
 ## Projetos
 
-| # | Projeto | Tecnica | Diferencial | Status |
-|---|---------|---------|-------------|--------|
-| 1 | [Credit Card Fraud Detection](#1-credit-card-fraud-detection) | Autoencoder + XGBoost | Pipeline hibrido unsupervised + supervised | ✅ Concluido |
-| 2 | [Customer Segmentation](#2-customer-segmentation) | K-Means + UMAP + RFM | Visualizacao 2D de alta dimensao | ✅ Concluido |
-| 3 | Credit Score | LightGBM + SHAP | Explicabilidade regulatoria, vies algoritmico | 🔜 Em breve |
-| 4 | Default Prediction | Survival Analysis (Cox) | Modelagem de tempo ate o evento | 🔜 Em breve |
+| # | Projeto | Tecnica | Diferencial | Metrica | Status |
+|---|---------|---------|-------------|---------|--------|
+| 1 | [Credit Card Fraud Detection](#1-credit-card-fraud-detection) | Autoencoder + XGBoost | Pipeline hibrido unsupervised + supervised | PR-AUC 0.8665 | ✅ Concluido |
+| 2 | [Customer Segmentation](#2-customer-segmentation) | K-Means + UMAP + RFM | Visualizacao 2D de alta dimensao | Silhouette 0.4271 | ✅ Concluido |
+| 3 | [Credit Score](#3-credit-score) | LightGBM + SHAP | Explicabilidade regulatoria + fairness | AUC-ROC 0.9651 | ✅ Concluido |
+| 4 | Default Prediction | Survival Analysis (Cox) | Modelagem de tempo ate o evento | — | 🔜 Em breve |
 
 ---
 
@@ -34,9 +36,21 @@ api → use_cases → domain ← infrastructure
 src/
 ├── domain/          # Entidades e contratos — zero dependencias externas
 ├── use_cases/       # Regras de negocio — orquestra sem conhecer frameworks
-├── infrastructure/  # PyTorch, XGBoost, sklearn, MLflow — implementacoes concretas
+├── infrastructure/  # PyTorch, XGBoost, LightGBM, SHAP — implementacoes concretas
 └── api/             # FastAPI, Pydantic, injecao de dependencia
 ```
+
+---
+
+## Compatibilidade
+
+| Sistema | Suporte | Ativacao do ambiente virtual |
+|---------|---------|------------------------------|
+| Windows | ✅ | `.venv\Scripts\Activate.ps1` |
+| Linux | ✅ | `source .venv/bin/activate` |
+| macOS | ✅ | `source .venv/bin/activate` |
+
+Todo o codigo Python e cross-platform. O pipeline de ML e a API rodam identicamente em qualquer OS.
 
 ---
 
@@ -84,7 +98,6 @@ Transacao → StandardScaler → Autoencoder → reconstruction_error
 ### API
 
 ```bash
-# Predicao unica
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{"Time": 406.0, "Amount": 2125.87, "V1": -3.04, ...}'
@@ -102,25 +115,22 @@ curl -X POST http://localhost:8000/predict \
 | risk_label | Probabilidade | Acao sugerida |
 |------------|---------------|---------------|
 | `LOW` | < 50% | Aprovar |
-| `MEDIUM` | 50–90% | Monitorar |
+| `MEDIUM` | 50-90% | Monitorar |
 | `HIGH` | >= 90% | Bloquear |
 
 ### Como executar
 
 ```bash
-# Instalar dependencias
 pip install -r requirements.txt
 
-# Treinar
+# Windows
+$env:PYTHONPATH = "src"
+# Linux / macOS
+export PYTHONPATH=src
+
 python scripts/train_autoencoder.py
 python scripts/train_classifier.py
-
-# API
-cd src
 uvicorn api.main:app --reload --port 8000
-
-# Testes
-$env:PYTHONPATH = "src"
 pytest tests/test_fraud_detection.py -v   # 14 testes
 ```
 
@@ -136,26 +146,14 @@ Segmentacao de clientes usando **K-Means + UMAP** sobre features **RFM** (Recenc
 
 ### O problema
 
-Nem todo cliente e igual. Um banco ou fintech precisa saber quem sao seus **Champions** (alto valor, compram sempre), quem esta **At Risk** (ja comprou muito mas sumiu) e quem e **Lost** (nunca mais voltou) — para agir diferente com cada grupo.
+Nem todo cliente e igual. Um banco ou fintech precisa saber quem sao seus **Champions**, quem esta **At Risk** e quem e **Lost** — para agir diferente com cada grupo.
 
 | Desafio | Solucao |
 |---------|---------|
 | Outliers extremos em valor monetario | RobustScaler (resistente a outliers vs StandardScaler) |
-| Numero de clusters desconhecido | KMeans com 5 clusters otimizados por Silhouette Score |
-| Dados de alta dimensao dificeis de visualizar | UMAP reduz para 2D mantendo estrutura de vizinhanca |
+| Numero de clusters | KMeans com 5 clusters otimizados por Silhouette Score |
+| Alta dimensao dificil de visualizar | UMAP reduz para 2D mantendo estrutura de vizinhanca |
 | Labels sem significado de negocio | Mapeamento automatico por valor monetario medio |
-
-### Pipeline
-
-```
-CSV Online Retail → RFMBuilder → Customer(recency, frequency, monetary)
-                                          ↓
-                               RobustScaler → KMeans(5) → cluster_id
-                                          ↓
-                               UMAP(2D) → umap_x, umap_y
-                                          ↓
-                               CustomerSegment(label, rfm_score, is_high_value)
-```
 
 ### Resultados
 
@@ -164,7 +162,7 @@ CSV Online Retail → RFMBuilder → Customer(recency, frequency, monetary)
 | Silhouette Score | **0.4271** |
 | Clientes segmentados | 5.819 |
 | Clusters | 5 |
-| Dataset | Online Retail UCI (2009–2011) |
+| Dataset | Online Retail UCI (2009-2011) |
 
 ### Segmentos
 
@@ -176,42 +174,138 @@ CSV Online Retail → RFMBuilder → Customer(recency, frequency, monetary)
 | New Customers | Baixo recency, baixa freq | Onboarding e educacao |
 | Lost | Alto recency, baixo valor | Desconto agressivo ou abandono |
 
+### Como executar
+
+```bash
+cd customer-segmentation
+pip install -r requirements.txt
+
+# Windows
+$env:PYTHONPATH = "src"
+# Linux / macOS
+export PYTHONPATH=src
+
+python scripts/train_segmentation.py --data data/raw/online_retail.csv
+uvicorn api.main:app --reload --port 8001
+pytest tests/ -v   # 13 testes
+```
+
+---
+
+## 3. Credit Score
+
+Modelo de credit scoring com **LightGBM + Platt calibration + SHAP** e analise de vies algoritmico por faixa etaria. Dataset Give Me Some Credit (150k clientes, Kaggle).
+
+### Dashboard
+
+![Dashboard](credit-score/reports/figures/dashboard.png)
+
+### O problema
+
+Credit scoring requer mais do que boa performance — reguladores exigem **probabilidades calibradas** e **explicabilidade por cliente**.
+
+| Desafio | Solucao |
+|---------|---------|
+| 19.8% de nulls em MonthlyIncome | Imputacao por mediana da faixa etaria |
+| Outliers extremos (DebtRatio ate 329k) | Clip por percentil 99 + feature derivada |
+| Probabilidades descalibradas | Platt scaling (CalibratedClassifierCV) |
+| Explicabilidade regulatoria | SHAP TreeExplainer — top 3 fatores por cliente |
+| Vies algoritmico por idade | Fairness analysis por faixa etaria |
+
+### Pipeline
+
+```
+CSV Give Me Some Credit → CreditDataProcessor → feature engineering
+                                    ↓
+                         LightGBM(scale_pos_weight)
+                                    ↓
+                         CalibratedClassifierCV (Platt scaling)
+                                    ↓
+                         SHAP TreeExplainer
+                                    ↓
+                  CreditScore(score 0-1000, grade A-E, top_factors)
+```
+
+### Resultados
+
+| Metrica | Valor | Benchmark de mercado |
+|---------|-------|---------------------|
+| AUC-ROC | **0.9651** | > 0.75 bom |
+| PR-AUC | **0.6641** | > 0.40 bom para 6.7% default |
+| KS Statistic | **0.8266** | > 0.40 excelente |
+| Brier Score | **0.0389** | < 0.10 bem calibrado |
+
+### Fairness Analysis
+
+| Faixa etaria | Aprovacao | Inadimplencia real |
+|---|---|---|
+| 18-30 | 90.1% | 11.9% |
+| 31-40 | 91.9% | 9.6% |
+| 41-50 | 93.2% | 8.5% |
+| 51-60 | 95.5% | 5.9% |
+| 61-70 | 98.1% | 3.5% |
+| 71+ | 99.3% | 2.1% |
+
+> Taxas de aprovacao consistentes com inadimplencia real — sem vies discriminatorio por idade.
+
+### Score e Grades
+
+| Grade | Score | Recomendacao |
+|-------|-------|--------------|
+| A | 800-1000 | APPROVE |
+| B | 650-799 | APPROVE |
+| C | 500-649 | REVIEW |
+| D | 350-499 | REVIEW |
+| E | 0-349 | DENY |
+
 ### API
 
 ```bash
-# Segmentar um cliente
-curl -X POST http://localhost:8000/segment \
+curl -X POST http://localhost:8002/score \
   -H "Content-Type: application/json" \
-  -d '{"customer_id": "12345", "recency": 30, "frequency": 12, "monetary": 850}'
+  -d '{
+    "applicant_id": "A001",
+    "RevolvingUtilizationOfUnsecuredLines": 0.15,
+    "age": 45,
+    "NumberOfTime30-59DaysPastDueNotWorse": 0,
+    "DebtRatio": 0.35,
+    "MonthlyIncome": 6500.0,
+    "NumberOfOpenCreditLinesAndLoans": 8,
+    "NumberOfTimes90DaysLate": 0,
+    "NumberRealEstateLoansOrLines": 1,
+    "NumberOfTime60-89DaysPastDueNotWorse": 0,
+    "NumberOfDependents": 2
+  }'
 
 # Resposta
 {
-  "cluster_id": 0,
-  "segment_label": "Champions",
-  "rfm_score": 0.91,
-  "umap_x": 3.42,
-  "umap_y": -1.87,
-  "is_high_value": true
+  "score": 820,
+  "pd": 0.0180,
+  "risk_grade": "A",
+  "recommendation": "APPROVE",
+  "top_factors": [
+    {"feature": "NumberOfTimes90DaysLate", "shap_value": -0.42, "impact": "decreases_risk"},
+    {"feature": "RevolvingUtilizationOfUnsecuredLines", "shap_value": -0.18, "impact": "decreases_risk"},
+    {"feature": "total_late_payments", "shap_value": -0.11, "impact": "decreases_risk"}
+  ],
+  "latency_ms": 18.3
 }
 ```
 
 ### Como executar
 
 ```bash
-cd customer-segmentation
-
-# Instalar dependencias
+cd credit-score
 pip install -r requirements.txt
 
-# Treinar (necessita online_retail_II.csv do Kaggle)
+# Windows
 $env:PYTHONPATH = "src"
-python scripts/train_segmentation.py --data data/raw/online_retail.csv
+# Linux / macOS
+export PYTHONPATH=src
 
-# API
-uvicorn api.main:app --reload --port 8001
-
-# Testes
-pytest tests/ -v   # 13 testes
+python scripts/train_credit_score.py --data data/raw/cs-training.csv
+uvicorn api.main:app --reload --port 8002
+pytest tests/ -v   # 14 testes
 ```
 
 ---
@@ -220,25 +314,30 @@ pytest tests/ -v   # 13 testes
 
 | Categoria | Tecnologias |
 |-----------|-------------|
-| ML / DL | PyTorch, XGBoost, scikit-learn, UMAP |
+| ML / DL | PyTorch, XGBoost, LightGBM, scikit-learn, SHAP, UMAP |
 | API | FastAPI, Pydantic, Uvicorn |
 | Tracking | MLflow |
-| Testes | pytest, 41 testes automatizados |
-| Infra | Docker multi-stage, .venv |
+| Testes | pytest, 55 testes automatizados |
+| Infra | Docker multi-stage, venv |
 | Arquitetura | Clean Architecture (domain / use_cases / infrastructure / api) |
+| OS | Windows, Linux, macOS |
 
 ---
 
 ## O que esse portfolio demonstra
 
-- **Clean Architecture aplicada a ML** — separacao real entre dominio, casos de uso, infraestrutura e API; nenhum arquivo de modelo importa FastAPI, nenhum endpoint conhece XGBoost
-- **Tratamento de desbalanceamento extremo** — SMOTE, threshold calibrado por PR-AUC, nao por AUC-ROC
+- **Clean Architecture aplicada a ML** — separacao real entre dominio, casos de uso, infraestrutura e API
+- **Tratamento de desbalanceamento extremo** — SMOTE, threshold calibrado por PR-AUC, `scale_pos_weight`
 - **Anomaly detection** com Autoencoder como feature engineering para modelo supervisionado
 - **RFM + clustering** — padrao da industria financeira para segmentacao de clientes
 - **UMAP para visualizacao** — reducao de alta dimensao mantendo estrutura de vizinhanca
-- **APIs de inferencia em tempo real** — latencia < 50ms, endpoints `/predict`, `/segment`, `/health`
-- **Testes automatizados** cobrindo entidades, casos de uso e endpoints com mocks via `dependency_overrides`
-- **Rastreamento de experimentos** com MLflow
+- **Calibracao de probabilidade** (Platt scaling) — requisito regulatorio em credit scoring
+- **Explicabilidade por cliente** com SHAP TreeExplainer — top 3 fatores por decisao
+- **Fairness analysis** — deteccao de vies algoritmico por faixa etaria
+- **Score 0-1000 com grades A-E** — padrao de mercado financeiro
+- **APIs de inferencia em tempo real** — latencia < 50ms, endpoints `/predict`, `/segment`, `/score`, `/health`
+- **55 testes automatizados** cobrindo entidades, casos de uso e endpoints
+- **Cross-platform** — Windows, Linux e macOS
 
 ---
 
@@ -246,5 +345,7 @@ pytest tests/ -v   # 13 testes
 
 - Dal Pozzolo, A. et al. (2015). *Calibrating Probability with Undersampling for Unbalanced Classification*. IEEE SSCI.
 - McInnes, L. et al. (2018). *UMAP: Uniform Manifold Approximation and Projection*. arXiv:1802.03426.
+- Niculescu-Mizil, A. & Caruana, R. (2005). *Predicting Good Probabilities with Supervised Learning*. ICML.
 - Dataset 1: [ULB Credit Card Fraud](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
 - Dataset 2: [Online Retail UCI](https://archive.ics.uci.edu/dataset/352/online+retail)
+- Dataset 3: [Give Me Some Credit](https://www.kaggle.com/competitions/GiveMeSomeCredit/data)
