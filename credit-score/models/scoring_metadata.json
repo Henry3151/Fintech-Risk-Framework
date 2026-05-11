@@ -1,0 +1,25 @@
+{
+  "auc_roc": 0.9651,
+  "pr_auc": 0.6641,
+  "ks_statistic": 0.8266,
+  "brier_score": 0.0389,
+  "n_train": 119988,
+  "n_val": 29998,
+  "n_features": 13,
+  "feature_names": [
+    "RevolvingUtilizationOfUnsecuredLines",
+    "age",
+    "NumberOfTime30-59DaysPastDueNotWorse",
+    "DebtRatio",
+    "MonthlyIncome",
+    "NumberOfOpenCreditLinesAndLoans",
+    "NumberOfTimes90DaysLate",
+    "NumberRealEstateLoansOrLines",
+    "NumberOfTime60-89DaysPastDueNotWorse",
+    "NumberOfDependents",
+    "total_late_payments",
+    "debt_to_income",
+    "utilization_category"
+  ],
+  "best_iteration": 3
+}
