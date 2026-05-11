@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 from datetime import datetime
 from typing import List
@@ -39,21 +39,21 @@ class RFMBuilder:
         df = df.copy()
 
         # Remove linhas sem CustomerID
-        df = df.dropna(subset=["CustomerID"])
-        df["CustomerID"] = df["CustomerID"].astype(str).str.strip()
+        df = df.dropna(subset=["Customer ID"])
+        df["Customer ID"] = df["Customer ID"].astype(str).str.strip()
 
         # Remove cancelamentos (InvoiceNo comecando com C)
-        df = df[~df["InvoiceNo"].astype(str).str.startswith("C")]
+        df = df[~df["Invoice"].astype(str).str.startswith("C")]
 
         # Remove quantidades e precos invalidos
         df = df[df["Quantity"] > 0]
-        df = df[df["UnitPrice"] > 0]
+        df = df[df["Price"] > 0]
 
         # Converte InvoiceDate para datetime
         df["InvoiceDate"] = pd.to_datetime(df["InvoiceDate"])
 
         # Calcula valor total por linha
-        df["TotalPrice"] = df["Quantity"] * df["UnitPrice"]
+        df["TotalPrice"] = df["Quantity"] * df["Price"]
 
         return df
 
@@ -61,9 +61,9 @@ class RFMBuilder:
     def _compute_rfm(self, df: pd.DataFrame) -> List[Customer]:
         ref = self._reference_date or df["InvoiceDate"].max() + pd.Timedelta(days=1)
 
-        rfm = df.groupby("CustomerID").agg(
+        rfm = df.groupby("Customer ID").agg(
             recency=("InvoiceDate",  lambda x: (ref - x.max()).days),
-            frequency=("InvoiceNo",  "nunique"),
+            frequency=("Invoice",  "nunique"),
             monetary=("TotalPrice",  "sum"),
         ).reset_index()
 
@@ -73,7 +73,7 @@ class RFMBuilder:
 
         return [
             Customer(
-                customer_id=row["CustomerID"],
+                customer_id=row["Customer ID"],
                 recency=float(row["recency"]),
                 frequency=float(row["frequency"]),
                 monetary=float(row["monetary"]),

@@ -1,0 +1,6 @@
+{
+  "n_clusters": 5,
+  "silhouette_score": 0.4271,
+  "inertia": 5344.36,
+  "n_customers": 5819
+}
