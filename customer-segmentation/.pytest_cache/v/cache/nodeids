@@ -1,0 +1,15 @@
+[
+  "tests/test_segmentation.py::test_batch_endpoint_count",
+  "tests/test_segmentation.py::test_customer_nan_raises",
+  "tests/test_segmentation.py::test_customer_negative_recency",
+  "tests/test_segmentation.py::test_customer_valid",
+  "tests/test_segmentation.py::test_health_endpoint",
+  "tests/test_segmentation.py::test_segment_endpoint_200",
+  "tests/test_segmentation.py::test_segment_endpoint_fields",
+  "tests/test_segmentation.py::test_segment_endpoint_negative_monetary",
+  "tests/test_segmentation.py::test_segment_high_value_champions",
+  "tests/test_segmentation.py::test_segment_not_high_value_lost",
+  "tests/test_segmentation.py::test_segment_use_case_calls_model",
+  "tests/test_segmentation.py::test_segment_use_case_rejects_duplicate_ids",
+  "tests/test_segmentation.py::test_segment_use_case_rejects_empty"
+]

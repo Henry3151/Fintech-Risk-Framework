@@ -1,269 +1,250 @@
-# 💳 Credit Card Fraud Detection
+# Fintech Risk Framework
 
-> Pipeline híbrido de detecção de fraude em tempo real combinando **Anomaly Detection** (Autoencoder PyTorch) e **classificação supervisionada** (XGBoost + SMOTE).
+> Portfolio de Data Science aplicado ao setor financeiro — modelos de risco, segmentacao e deteccao de anomalias em producao, todos seguindo Clean Architecture.
 
-![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14+-blue?logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.3-orange?logo=pytorch&logoColor=white)
-![XGBoost](https://img.shields.io/badge/XGBoost-2.0-green)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-teal?logo=fastapi&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-41%20passed-brightgreen)
+![Architecture](https://img.shields.io/badge/architecture-Clean%20Architecture-purple)
 ![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-14%20passed-brightgreen)
-![PR-AUC](https://img.shields.io/badge/PR--AUC-0.8665-blue)
 
 ---
 
-## 📊 Dashboard de Avaliação
+## Projetos
+
+| # | Projeto | Tecnica | Diferencial | Status |
+|---|---------|---------|-------------|--------|
+| 1 | [Credit Card Fraud Detection](#1-credit-card-fraud-detection) | Autoencoder + XGBoost | Pipeline hibrido unsupervised + supervised | ✅ Concluido |
+| 2 | [Customer Segmentation](#2-customer-segmentation) | K-Means + UMAP + RFM | Visualizacao 2D de alta dimensao | ✅ Concluido |
+| 3 | Credit Score | LightGBM + SHAP | Explicabilidade regulatoria, vies algoritmico | 🔜 Em breve |
+| 4 | Default Prediction | Survival Analysis (Cox) | Modelagem de tempo ate o evento | 🔜 Em breve |
+
+---
+
+## Arquitetura
+
+Todos os projetos seguem Clean Architecture com a mesma regra de dependencia:
+
+```
+api → use_cases → domain ← infrastructure
+```
+
+```
+src/
+├── domain/          # Entidades e contratos — zero dependencias externas
+├── use_cases/       # Regras de negocio — orquestra sem conhecer frameworks
+├── infrastructure/  # PyTorch, XGBoost, sklearn, MLflow — implementacoes concretas
+└── api/             # FastAPI, Pydantic, injecao de dependencia
+```
+
+---
+
+## 1. Credit Card Fraud Detection
+
+Pipeline hibrido de deteccao de fraude em tempo real combinando **Anomaly Detection** (Autoencoder PyTorch) e **classificacao supervisionada** (XGBoost + SMOTE).
+
+### Dashboard
 
 ![Dashboard](reports/figures/dashboard.png)
 
----
+### O problema
 
-## 📌 Contexto do problema
+Com apenas **0,17% de fraudes** no dataset, um modelo que classifica tudo como legitimo acerta 99,83% das vezes — e e completamente inutil.
 
-Com apenas **0,17% de fraudes** no dataset, um modelo que classifica tudo como legítimo acerta 99,83% das vezes — e é completamente inútil. Esse projeto ataca exatamente esse problema:
-
-| Desafio | Solução |
-|---|---|
+| Desafio | Solucao |
+|---------|---------|
 | Desbalanceamento extremo (0,17%) | SMOTE + `scale_pos_weight` no XGBoost |
-| Fraudes sem padrão supervisionado | Autoencoder treinado só com transações legítimas |
-| Threshold padrão 0.5 inadequado | Calibração via curva Precision-Recall |
-| Latência < 50ms antes da aprovação | Pipeline otimizado em memória |
+| Fraudes sem padrao supervisionado | Autoencoder treinado so com transacoes legitimas |
+| Threshold padrao 0.5 inadequado | Calibracao via curva Precision-Recall |
+| Latencia < 50ms | Pipeline otimizado em memoria |
 
----
-
-## 🏗️ Arquitetura
+### Pipeline
 
 ```
-Transação → Preprocessor → Autoencoder → XGBoost → Resposta
-                                ↓
-                        reconstruction_error
-                        (anomaly score como feature extra)
+Transacao → StandardScaler → Autoencoder → reconstruction_error
+                                                    ↓
+                             XGBoost([30 features + reconstruction_error])
+                                                    ↓
+                                          FraudPrediction
 ```
 
-**Estágio 1 — Autoencoder (unsupervised)**
-Treinado apenas com transações legítimas. Aprende o padrão normal.
-Fraudes geram alto erro de reconstrução → anomaly score.
-
-**Estágio 2 — XGBoost (supervised)**
-Recebe as 30 features originais + `reconstruction_error` como feature extra.
-Treinado com SMOTE (fraudes elevadas para 10% do treino).
-Threshold calibrado pela curva Precision-Recall — não fixo em 0.5.
-
----
-
-## 📈 Resultados obtidos
+### Resultados
 
 | Modelo | PR-AUC |
-|---|---|
-| Baseline aleatório | 0.0017 |
+|--------|--------|
+| Baseline aleatorio | 0.0017 |
 | Logistic Regression | ~0.62 |
 | Random Forest | ~0.78 |
 | XGBoost + SMOTE | ~0.84 |
 | **Autoencoder + XGBoost (este projeto)** | **0.8665** |
 
-> **Por que PR-AUC e não AUC-ROC?**
-> Com 0,17% de fraudes, a AUC-ROC é otimista demais — um modelo inútil pode ter AUC-ROC de 0.97.
-> A PR-AUC mede performance exatamente na classe minoritária, onde importa.
+> **Por que PR-AUC e nao AUC-ROC?** Com 0,17% de fraudes, a AUC-ROC e otimista demais. A PR-AUC mede performance exatamente na classe minoritaria.
 
-### Curva Precision-Recall
-
-![PR Curve](reports/figures/pr_curve.png)
-
-### Distribuição do Erro de Reconstrução
-
-O autoencoder aprende o padrão de transações **legítimas**. Fraudes ficam fora da distribuição aprendida e geram erro alto — esse erro vira uma feature extra para o XGBoost.
-
-![Reconstruction Error](reports/figures/reconstruction_error_dist.png)
-
-### Feature Importance
-
-O `Recon_Error` (anomaly score do autoencoder) aparece entre as features mais importantes do XGBoost, validando a arquitetura híbrida.
-
-![Feature Importance](reports/figures/feature_importance.png)
-
-### Distribuição do Score de Fraude
-
-![Score Distribution](reports/figures/score_distribution.png)
-
----
-
-## 📡 API
-
-Documentação interativa em `http://localhost:8000/docs` após subir a API.
-
-### `POST /predict`
-
-Avalia uma transação antes de aprovar o pagamento. Latência alvo: **< 50ms**.
+### API
 
 ```bash
+# Predicao unica
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
-  -d '{
-    "Time": 406.0, "Amount": 2125.87,
-    "V1": -3.04, "V2": -3.16, "V3": 1.09, "V4": 2.29, "V5": -3.43,
-    "V6": -1.22, "V7": -4.49, "V8": 1.30, "V9": -2.38, "V10": -4.91,
-    "V11": 3.26, "V12": -5.26, "V13": -0.01, "V14": -5.26, "V15": 0.02,
-    "V16": -1.77, "V17": -8.70, "V18": -0.54, "V19": -0.02, "V20": -0.14,
-    "V21": 0.04, "V22": 0.62, "V23": 0.07, "V24": 0.57, "V25": 0.42,
-    "V26": -0.03, "V27": 0.32, "V28": 0.04
-  }'
-```
+  -d '{"Time": 406.0, "Amount": 2125.87, "V1": -3.04, ...}'
 
-**Response:**
-
-```json
+# Resposta
 {
   "fraud_probability": 0.9231,
-  "fraud_prediction": true,
-  "risk_score": "critical",
+  "is_fraud": true,
+  "risk_label": "HIGH",
   "reconstruction_error": 0.847,
-  "model_version": "autoencoder_v1",
   "latency_ms": 12.4
 }
 ```
 
-### `POST /predict/batch`
+| risk_label | Probabilidade | Acao sugerida |
+|------------|---------------|---------------|
+| `LOW` | < 50% | Aprovar |
+| `MEDIUM` | 50–90% | Monitorar |
+| `HIGH` | >= 90% | Bloquear |
 
-Processa até 1000 transações em lote.
+### Como executar
 
-### `GET /health`
+```bash
+# Instalar dependencias
+pip install -r requirements.txt
 
-```json
+# Treinar
+python scripts/train_autoencoder.py
+python scripts/train_classifier.py
+
+# API
+cd src
+uvicorn api.main:app --reload --port 8000
+
+# Testes
+$env:PYTHONPATH = "src"
+pytest tests/test_fraud_detection.py -v   # 14 testes
+```
+
+---
+
+## 2. Customer Segmentation
+
+Segmentacao de clientes usando **K-Means + UMAP** sobre features **RFM** (Recency, Frequency, Monetary) extraidas do dataset Online Retail UCI (541k transacoes, 5.819 clientes).
+
+### Dashboard
+
+![Dashboard](customer-segmentation/reports/figures/dashboard.png)
+
+### O problema
+
+Nem todo cliente e igual. Um banco ou fintech precisa saber quem sao seus **Champions** (alto valor, compram sempre), quem esta **At Risk** (ja comprou muito mas sumiu) e quem e **Lost** (nunca mais voltou) — para agir diferente com cada grupo.
+
+| Desafio | Solucao |
+|---------|---------|
+| Outliers extremos em valor monetario | RobustScaler (resistente a outliers vs StandardScaler) |
+| Numero de clusters desconhecido | KMeans com 5 clusters otimizados por Silhouette Score |
+| Dados de alta dimensao dificeis de visualizar | UMAP reduz para 2D mantendo estrutura de vizinhanca |
+| Labels sem significado de negocio | Mapeamento automatico por valor monetario medio |
+
+### Pipeline
+
+```
+CSV Online Retail → RFMBuilder → Customer(recency, frequency, monetary)
+                                          ↓
+                               RobustScaler → KMeans(5) → cluster_id
+                                          ↓
+                               UMAP(2D) → umap_x, umap_y
+                                          ↓
+                               CustomerSegment(label, rfm_score, is_high_value)
+```
+
+### Resultados
+
+| Metrica | Valor |
+|---------|-------|
+| Silhouette Score | **0.4271** |
+| Clientes segmentados | 5.819 |
+| Clusters | 5 |
+| Dataset | Online Retail UCI (2009–2011) |
+
+### Segmentos
+
+| Segmento | Perfil RFM | Acao de negocio |
+|----------|-----------|-----------------|
+| Champions | Baixo recency, alta freq, alto monetary | Programa de fidelidade VIP |
+| Loyal Customers | Frequencia alta, valor medio | Upsell / cross-sell |
+| At Risk | Alto recency, bom historico | Campanha de reativacao urgente |
+| New Customers | Baixo recency, baixa freq | Onboarding e educacao |
+| Lost | Alto recency, baixo valor | Desconto agressivo ou abandono |
+
+### API
+
+```bash
+# Segmentar um cliente
+curl -X POST http://localhost:8000/segment \
+  -H "Content-Type: application/json" \
+  -d '{"customer_id": "12345", "recency": 30, "frequency": 12, "monetary": 850}'
+
+# Resposta
 {
-  "status": "healthy",
-  "models_loaded": true,
-  "model_version": "autoencoder_v1",
-  "autoencoder_pr_auc": 0.4603,
-  "classifier_pr_auc": 0.8665
+  "cluster_id": 0,
+  "segment_label": "Champions",
+  "rfm_score": 0.91,
+  "umap_x": 3.42,
+  "umap_y": -1.87,
+  "is_high_value": true
 }
 ```
 
-### Risk Score
-
-| Score | Probabilidade | Ação sugerida |
-|---|---|---|
-| `low` | < 30% | Aprovar |
-| `medium` | 30–60% | Monitorar |
-| `high` | 60–85% | Revisão manual |
-| `critical` | > 85% | Bloquear |
-
----
-
-## 🚀 Como executar
-
-### 1. Clonar e instalar
+### Como executar
 
 ```bash
-git clone https://github.com/Henry3151/Credit-Card-Fraud-Detection.git
-cd Credit-Card-Fraud-Detection
+cd customer-segmentation
 
-python -m venv .venv
-# Windows:
-.venv\Scripts\Activate.ps1
-# Linux/Mac:
-source .venv/bin/activate
-
+# Instalar dependencias
 pip install -r requirements.txt
-```
 
-### 2. Dataset
+# Treinar (necessita online_retail_II.csv do Kaggle)
+$env:PYTHONPATH = "src"
+python scripts/train_segmentation.py --data data/raw/online_retail.csv
 
-Baixe `creditcard.csv` do [Kaggle](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) e coloque em `data/raw/creditcard.csv`.
+# API
+uvicorn api.main:app --reload --port 8001
 
-### 3. Pipeline completo
-
-```bash
-# Preparar dados
-python src/data/make_dataset.py
-
-# Treinar Autoencoder (anomaly detection)
-python src/models/train_autoencoder.py
-
-# Treinar XGBoost Classifier
-python src/models/train_classifier.py
-
-# Gerar graficos e logar no MLflow
-python src/models/generate_reports.py
-
-# Subir API
-uvicorn src.api.main:app --reload --port 8000
-
-# Ver experimentos no MLflow
-mlflow ui --port 5000
-```
-
-### 4. Testes
-
-```bash
-pytest tests/ -v
-# 14 passed
-```
-
-### 5. Docker
-
-```bash
-docker build -t fraud-api .
-docker run -p 8000:8000 fraud-api
+# Testes
+pytest tests/ -v   # 13 testes
 ```
 
 ---
 
-## 📁 Estrutura do projeto
+## Stack tecnologico
 
-```
-Credit-Card-Fraud-Detection/
-├── data/
-│   ├── raw/                    # creditcard.csv (não commitado)
-│   └── processed/              # Arrays .npy gerados pelo pipeline
-├── models/
-│   ├── preprocessor.joblib
-│   ├── autoencoder.pt
-│   ├── autoencoder_metadata.json
-│   ├── classifier.joblib
-│   └── classifier_metadata.json
-├── notebooks/
-│   ├── 01_eda_fraud.ipynb
-│   └── 02_model_evaluation.ipynb
-├── reports/
-│   └── figures/                # Graficos gerados pelo generate_reports.py
-│       ├── dashboard.png
-│       ├── pr_curve.png
-│       ├── reconstruction_error_dist.png
-│       ├── feature_importance.png
-│       ├── confusion_matrix.png
-│       └── score_distribution.png
-├── src/
-│   ├── api/main.py
-│   ├── data/make_dataset.py
-│   ├── features/build_features.py
-│   └── models/
-│       ├── train_autoencoder.py
-│       ├── train_classifier.py
-│       └── generate_reports.py
-├── tests/test_fraud.py
-├── Dockerfile
-├── ARCHITECTURE.md
-├── requirements.txt
-└── README.md
-```
+| Categoria | Tecnologias |
+|-----------|-------------|
+| ML / DL | PyTorch, XGBoost, scikit-learn, UMAP |
+| API | FastAPI, Pydantic, Uvicorn |
+| Tracking | MLflow |
+| Testes | pytest, 41 testes automatizados |
+| Infra | Docker multi-stage, .venv |
+| Arquitetura | Clean Architecture (domain / use_cases / infrastructure / api) |
 
 ---
 
-## 🧠 O que esse projeto demonstra
+## O que esse portfolio demonstra
 
-- Tratamento de **desbalanceamento extremo** (0,17%) com SMOTE e threshold calibrado
-- **Anomaly detection** com Autoencoder — não só classificação supervisionada
-- Diferença prática entre **AUC-ROC e PR-AUC** e quando usar cada uma
-- Pensamento em **custo de negócio**: FN = fraude passa, FP = cliente bloqueado
-- Arquitetura de **modelo híbrido** (unsupervised + supervised em pipeline)
-- API de **inferência em tempo real** com latência < 50ms (FastAPI + PyTorch + XGBoost)
-- Pipeline reproduzível com **Docker**
-- Rastreamento de experimentos com **MLflow** (métricas, parâmetros e artefatos)
-- **14 testes automatizados** cobrindo schema, validação de input e comportamento do modelo
+- **Clean Architecture aplicada a ML** — separacao real entre dominio, casos de uso, infraestrutura e API; nenhum arquivo de modelo importa FastAPI, nenhum endpoint conhece XGBoost
+- **Tratamento de desbalanceamento extremo** — SMOTE, threshold calibrado por PR-AUC, nao por AUC-ROC
+- **Anomaly detection** com Autoencoder como feature engineering para modelo supervisionado
+- **RFM + clustering** — padrao da industria financeira para segmentacao de clientes
+- **UMAP para visualizacao** — reducao de alta dimensao mantendo estrutura de vizinhanca
+- **APIs de inferencia em tempo real** — latencia < 50ms, endpoints `/predict`, `/segment`, `/health`
+- **Testes automatizados** cobrindo entidades, casos de uso e endpoints com mocks via `dependency_overrides`
+- **Rastreamento de experimentos** com MLflow
 
 ---
 
-## 📚 Referências
+## Referencias
 
 - Dal Pozzolo, A. et al. (2015). *Calibrating Probability with Undersampling for Unbalanced Classification*. IEEE SSCI.
-- Dataset: [ULB Machine Learning Group](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
+- McInnes, L. et al. (2018). *UMAP: Uniform Manifold Approximation and Projection*. arXiv:1802.03426.
+- Dataset 1: [ULB Credit Card Fraud](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
+- Dataset 2: [Online Retail UCI](https://archive.ics.uci.edu/dataset/352/online+retail)
