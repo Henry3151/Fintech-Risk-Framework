@@ -20,7 +20,7 @@
 | 1 | [Credit Card Fraud Detection](#1-credit-card-fraud-detection) | Autoencoder + XGBoost | Pipeline hibrido unsupervised + supervised | PR-AUC 0.8665 | ✅ Concluido |
 | 2 | [Customer Segmentation](#2-customer-segmentation) | K-Means + UMAP + RFM | Visualizacao 2D de alta dimensao | Silhouette 0.4271 | ✅ Concluido |
 | 3 | [Credit Score](#3-credit-score) | LightGBM + SHAP | Explicabilidade regulatoria + fairness | AUC-ROC 0.9651 | ✅ Concluido |
-| 4 | Default Prediction | Survival Analysis (Cox) | Modelagem de tempo ate o evento | — | 🔜 Em breve |
+| 4 | [Default Prediction](#4-default-prediction) | Survival Analysis (Cox PH) | Modelagem de tempo ate o evento | C-index 0.6795 | ✅ Concluido |
 
 ---
 
@@ -36,7 +36,7 @@ api → use_cases → domain ← infrastructure
 src/
 ├── domain/          # Entidades e contratos — zero dependencias externas
 ├── use_cases/       # Regras de negocio — orquestra sem conhecer frameworks
-├── infrastructure/  # PyTorch, XGBoost, LightGBM, SHAP — implementacoes concretas
+├── infrastructure/  # PyTorch, XGBoost, LightGBM, lifelines — implementacoes concretas
 └── api/             # FastAPI, Pydantic, injecao de dependencia
 ```
 
@@ -93,8 +93,6 @@ Transacao → StandardScaler → Autoencoder → reconstruction_error
 | XGBoost + SMOTE | ~0.84 |
 | **Autoencoder + XGBoost (este projeto)** | **0.8665** |
 
-> **Por que PR-AUC e nao AUC-ROC?** Com 0,17% de fraudes, a AUC-ROC e otimista demais. A PR-AUC mede performance exatamente na classe minoritaria.
-
 ### API
 
 ```bash
@@ -112,21 +110,13 @@ curl -X POST http://localhost:8000/predict \
 }
 ```
 
-| risk_label | Probabilidade | Acao sugerida |
-|------------|---------------|---------------|
-| `LOW` | < 50% | Aprovar |
-| `MEDIUM` | 50-90% | Monitorar |
-| `HIGH` | >= 90% | Bloquear |
-
 ### Como executar
 
 ```bash
 pip install -r requirements.txt
 
-# Windows
-$env:PYTHONPATH = "src"
-# Linux / macOS
-export PYTHONPATH=src
+# Windows: $env:PYTHONPATH = "src"
+# Linux/macOS: export PYTHONPATH=src
 
 python scripts/train_autoencoder.py
 python scripts/train_classifier.py
@@ -146,7 +136,7 @@ Segmentacao de clientes usando **K-Means + UMAP** sobre features **RFM** (Recenc
 
 ### O problema
 
-Nem todo cliente e igual. Um banco ou fintech precisa saber quem sao seus **Champions**, quem esta **At Risk** e quem e **Lost** — para agir diferente com cada grupo.
+Nem todo cliente e igual. Um banco ou fintech precisa saber quem sao seus **Champions**, quem esta **At Risk** e quem e **Lost** para agir diferente com cada grupo.
 
 | Desafio | Solucao |
 |---------|---------|
@@ -180,10 +170,8 @@ Nem todo cliente e igual. Um banco ou fintech precisa saber quem sao seus **Cham
 cd customer-segmentation
 pip install -r requirements.txt
 
-# Windows
-$env:PYTHONPATH = "src"
-# Linux / macOS
-export PYTHONPATH=src
+# Windows: $env:PYTHONPATH = "src"
+# Linux/macOS: export PYTHONPATH=src
 
 python scripts/train_segmentation.py --data data/raw/online_retail.csv
 uvicorn api.main:app --reload --port 8001
@@ -211,20 +199,6 @@ Credit scoring requer mais do que boa performance — reguladores exigem **proba
 | Probabilidades descalibradas | Platt scaling (CalibratedClassifierCV) |
 | Explicabilidade regulatoria | SHAP TreeExplainer — top 3 fatores por cliente |
 | Vies algoritmico por idade | Fairness analysis por faixa etaria |
-
-### Pipeline
-
-```
-CSV Give Me Some Credit → CreditDataProcessor → feature engineering
-                                    ↓
-                         LightGBM(scale_pos_weight)
-                                    ↓
-                         CalibratedClassifierCV (Platt scaling)
-                                    ↓
-                         SHAP TreeExplainer
-                                    ↓
-                  CreditScore(score 0-1000, grade A-E, top_factors)
-```
 
 ### Resultados
 
@@ -258,53 +232,126 @@ CSV Give Me Some Credit → CreditDataProcessor → feature engineering
 | D | 350-499 | REVIEW |
 | E | 0-349 | DENY |
 
-### API
-
-```bash
-curl -X POST http://localhost:8002/score \
-  -H "Content-Type: application/json" \
-  -d '{
-    "applicant_id": "A001",
-    "RevolvingUtilizationOfUnsecuredLines": 0.15,
-    "age": 45,
-    "NumberOfTime30-59DaysPastDueNotWorse": 0,
-    "DebtRatio": 0.35,
-    "MonthlyIncome": 6500.0,
-    "NumberOfOpenCreditLinesAndLoans": 8,
-    "NumberOfTimes90DaysLate": 0,
-    "NumberRealEstateLoansOrLines": 1,
-    "NumberOfTime60-89DaysPastDueNotWorse": 0,
-    "NumberOfDependents": 2
-  }'
-
-# Resposta
-{
-  "score": 820,
-  "pd": 0.0180,
-  "risk_grade": "A",
-  "recommendation": "APPROVE",
-  "top_factors": [
-    {"feature": "NumberOfTimes90DaysLate", "shap_value": -0.42, "impact": "decreases_risk"},
-    {"feature": "RevolvingUtilizationOfUnsecuredLines", "shap_value": -0.18, "impact": "decreases_risk"},
-    {"feature": "total_late_payments", "shap_value": -0.11, "impact": "decreases_risk"}
-  ],
-  "latency_ms": 18.3
-}
-```
-
 ### Como executar
 
 ```bash
 cd credit-score
 pip install -r requirements.txt
 
-# Windows
-$env:PYTHONPATH = "src"
-# Linux / macOS
-export PYTHONPATH=src
+# Windows: $env:PYTHONPATH = "src"
+# Linux/macOS: export PYTHONPATH=src
 
 python scripts/train_credit_score.py --data data/raw/cs-training.csv
 uvicorn api.main:app --reload --port 8002
+pytest tests/ -v   # 14 testes
+```
+
+---
+
+## 4. Default Prediction
+
+Modelo de **Survival Analysis** usando **Cox Proportional Hazards** para prever quando (nao apenas se) um emprestimo vai entrar em default. Dataset Lending Club (2.2M emprestimos, 2007-2018).
+
+### Dashboard
+
+![Dashboard](default-prediction/reports/figures/dashboard.png)
+
+### O problema
+
+Classificacao binaria responde "este emprestimo vai dar default?" — mas gestores de risco precisam saber **quando**: qual a probabilidade de default nos proximos 12, 24 ou 36 meses? Survival Analysis modela o tempo ate o evento, nao apenas sua ocorrencia.
+
+| Desafio | Solucao |
+|---------|---------|
+| Dados censurados (emprestimos ainda ativos) | Cox PH trata censura diretamente — classificadores ignoram |
+| Definicao de evento vs. censura | Charged Off + Default + Late 31-120d = evento; resto = censurado |
+| Duracao variavel por emprestimo | `duration_months` calculado entre `issue_d` e `last_pymnt_d` |
+| Volume (2.2M linhas) | Amostra estratificada de 200k mantendo proporcao de eventos |
+
+### Pipeline
+
+```
+CSV Lending Club → LendingClubProcessor → duration_months + event
+                                                    ↓
+                              StandardScaler → CoxPHFitter(penalizer=0.1)
+                                                    ↓
+                         predict_survival_function(t=[12, 24, 36])
+                                                    ↓
+                    DefaultPrediction(survival_at_12m, hazard_ratio, risk_tier)
+```
+
+### Resultados
+
+| Metrica | Valor | Interpretacao |
+|---------|-------|---------------|
+| **C-index** | **0.6795** | > 0.65 util em credito |
+| **Brier Score 12m** | **0.0459** | Excelente calibracao |
+| Eventos (default) | 13% | Dataset bem representado |
+| Convergencia | 5 iteracoes | Modelo estavel |
+
+### Coeficientes Cox — Fatores de Risco
+
+| Feature | Coef | Interpretacao |
+|---------|------|---------------|
+| `int_rate` | +0.19 | Taxa alta aumenta risco |
+| `grade_encoded` | +0.18 | Grade pior aumenta risco |
+| `inq_last_6mths` | +0.06 | Consultas de credito aumentam risco |
+| `fico_range_low` | -0.08 | FICO alto reduz risco |
+| `annual_inc` | -0.06 | Renda alta protege contra default |
+| `emp_length_years` | -0.02 | Mais tempo empregado reduz risco |
+
+### API
+
+```bash
+curl -X POST http://localhost:8003/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "loan_id": "L001",
+    "loan_amnt": 15000,
+    "int_rate": 13.99,
+    "grade": "C",
+    "emp_length_years": 5,
+    "annual_inc": 65000,
+    "dti": 18.5,
+    "fico_range_low": 690,
+    "open_acc": 10,
+    "revol_util": 45,
+    "total_acc": 25,
+    "inq_last_6mths": 1,
+    "pub_rec": 0,
+    "term_months": 36
+  }'
+
+# Resposta
+{
+  "survival_at_12m": 0.9231,
+  "survival_at_24m": 0.8654,
+  "survival_at_36m": 0.8102,
+  "median_survival_months": 48.0,
+  "hazard_ratio": 0.92,
+  "risk_tier": "LOW",
+  "pd_12m": 0.0769,
+  "latency_ms": 22.1
+}
+```
+
+| risk_tier | pd_12m | Interpretacao |
+|-----------|--------|---------------|
+| `LOW` | < 5% | Risco baixo |
+| `MEDIUM` | 5-15% | Monitorar |
+| `HIGH` | 15-30% | Revisao manual |
+| `VERY_HIGH` | > 30% | Alto risco |
+
+### Como executar
+
+```bash
+cd default-prediction
+pip install -r requirements.txt
+
+# Windows: $env:PYTHONPATH = "src"
+# Linux/macOS: export PYTHONPATH=src
+
+python scripts/train_default.py --data data/raw/lending_club.csv
+uvicorn api.main:app --reload --port 8003
 pytest tests/ -v   # 14 testes
 ```
 
@@ -314,7 +361,7 @@ pytest tests/ -v   # 14 testes
 
 | Categoria | Tecnologias |
 |-----------|-------------|
-| ML / DL | PyTorch, XGBoost, LightGBM, scikit-learn, SHAP, UMAP |
+| ML / DL | PyTorch, XGBoost, LightGBM, scikit-learn, SHAP, UMAP, lifelines |
 | API | FastAPI, Pydantic, Uvicorn |
 | Tracking | MLflow |
 | Testes | pytest, 55 testes automatizados |
@@ -335,7 +382,9 @@ pytest tests/ -v   # 14 testes
 - **Explicabilidade por cliente** com SHAP TreeExplainer — top 3 fatores por decisao
 - **Fairness analysis** — deteccao de vies algoritmico por faixa etaria
 - **Score 0-1000 com grades A-E** — padrao de mercado financeiro
-- **APIs de inferencia em tempo real** — latencia < 50ms, endpoints `/predict`, `/segment`, `/score`, `/health`
+- **Survival Analysis (Cox PH)** — modela tempo ate o evento, nao apenas classificacao binaria
+- **Tratamento de dados censurados** — diferencial tecnico vs. classificadores convencionais
+- **APIs de inferencia em tempo real** — latencia < 50ms em todos os projetos
 - **55 testes automatizados** cobrindo entidades, casos de uso e endpoints
 - **Cross-platform** — Windows, Linux e macOS
 
@@ -346,6 +395,8 @@ pytest tests/ -v   # 14 testes
 - Dal Pozzolo, A. et al. (2015). *Calibrating Probability with Undersampling for Unbalanced Classification*. IEEE SSCI.
 - McInnes, L. et al. (2018). *UMAP: Uniform Manifold Approximation and Projection*. arXiv:1802.03426.
 - Niculescu-Mizil, A. & Caruana, R. (2005). *Predicting Good Probabilities with Supervised Learning*. ICML.
+- Cox, D.R. (1972). *Regression Models and Life-Tables*. Journal of the Royal Statistical Society.
 - Dataset 1: [ULB Credit Card Fraud](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
 - Dataset 2: [Online Retail UCI](https://archive.ics.uci.edu/dataset/352/online+retail)
 - Dataset 3: [Give Me Some Credit](https://www.kaggle.com/competitions/GiveMeSomeCredit/data)
+- Dataset 4: [Lending Club](https://www.kaggle.com/datasets/wordsforthewise/lending-club)
