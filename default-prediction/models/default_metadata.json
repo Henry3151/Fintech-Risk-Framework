@@ -1,0 +1,23 @@
+{
+  "c_index": 0.6795,
+  "brier_score_12m": 0.0459,
+  "n_events": 25636,
+  "n_censored": 171577,
+  "n_train": 157770,
+  "feature_cols": [
+    "loan_amnt",
+    "int_rate",
+    "grade_encoded",
+    "emp_length_years",
+    "annual_inc",
+    "dti",
+    "fico_range_low",
+    "open_acc",
+    "revol_util",
+    "total_acc",
+    "inq_last_6mths",
+    "pub_rec",
+    "term_months"
+  ],
+  "penalizer": 0.1
+}

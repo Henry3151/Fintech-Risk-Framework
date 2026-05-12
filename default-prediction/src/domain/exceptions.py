@@ -1,0 +1,16 @@
+# -*- coding: utf-8 -*-
+
+# Classe base para todos os erros de dominio do projeto de default prediction
+class DomainError(Exception): ...
+
+# Lancada quando os dados de entrada falham na validacao
+class ValidationError(DomainError): ...
+
+# Lancada quando tentativa de inferencia ocorre antes do modelo ser carregado
+class ModelNotLoadedError(DomainError): ...
+
+# Lancada quando ocorre erro durante a predicao
+class PredictionError(DomainError): ...
+
+# Lancada quando ocorre erro ao carregar ou salvar artefatos
+class RepositoryError(DomainError): ...
