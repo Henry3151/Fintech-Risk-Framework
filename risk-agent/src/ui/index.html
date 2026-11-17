@@ -240,7 +240,7 @@
 
       <div style="margin-bottom:0.5rem; display:flex; align-items:center; justify-content:space-between;">
         <div style="font-size:0.85rem;font-weight:600;color:#8b949e;">Relatorio Narrativo</div>
-        <div class="provider-badge" id="provider-badge">claude</div>
+        <div class="provider-badge" id="provider-badge">api</div>
       </div>
       <div class="narrative-box" id="narrative">—</div>
       <div class="latency" id="latency"></div>
@@ -377,7 +377,7 @@ function renderResult(data) {
   // Narrative
   document.getElementById('narrative').textContent = data.narrative;
   document.getElementById('provider-badge').textContent =
-    data.llm_provider === 'claude' ? '✦ Claude API' :
+    data.llm_provider === 'api' ? '✦ API de LLM' :
     data.llm_provider === 'ollama' ? '⬡ Ollama local' : 'sem LLM';
   document.getElementById('latency').textContent =
     `Tempo total de analise: ${data.latency_ms}ms`;

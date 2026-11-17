@@ -74,7 +74,7 @@ async def test_analyze_with_mocked_apis():
     async def mock_seg(p):      return MOCK_SEG
     async def mock_credit(p):   return MOCK_CREDIT
     async def mock_default(p):  return MOCK_DEFAULT
-    async def mock_narrative(p, f, s, c, d): return "Relatorio de teste.", "claude"
+    async def mock_narrative(p, f, s, c, d): return "Relatorio de teste.", "api"
 
     agent._call_fraud        = mock_fraud
     agent._call_segmentation = mock_seg
@@ -87,7 +87,7 @@ async def test_analyze_with_mocked_apis():
 
     assert report.client_id == "TEST001"
     assert report.risk_summary == "BAIXO RISCO"
-    assert report.llm_provider == "claude"
+    assert report.llm_provider == "api"
     assert report.latency_ms > 0
 
 
@@ -110,7 +110,7 @@ async def test_analyze_endpoint_with_mock():
         narrative="Cliente de baixo risco. Recomendado APROVAR.",
         risk_summary="BAIXO RISCO",
         latency_ms=450.0,
-        llm_provider="claude",
+        llm_provider="api",
     )
     with patch("api.main._agent") as mock_agent:
         mock_agent.analyze = AsyncMock(return_value=mock_report)
@@ -132,4 +132,4 @@ async def test_analyze_endpoint_with_mock():
         assert r.status_code == 200
         data = r.json()
         assert data["risk_summary"] == "BAIXO RISCO"
-        assert data["llm_provider"] == "claude"
+        assert data["llm_provider"] == "api"

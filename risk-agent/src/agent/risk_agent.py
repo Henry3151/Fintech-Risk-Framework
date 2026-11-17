@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 RiskAgent — orquestra as 4 APIs do Fintech Risk Framework
-e gera relatorio em linguagem natural via Claude ou Ollama.
+e gera relatorio em linguagem natural via API de LLM ou Ollama.
 """
 from __future__ import annotations
 import asyncio
@@ -20,7 +20,8 @@ API_SEGMENTATION= os.getenv("API_SEGMENTATION","http://localhost:8001")
 API_CREDIT      = os.getenv("API_CREDIT",      "http://localhost:8002")
 API_DEFAULT     = os.getenv("API_DEFAULT",     "http://localhost:8003")
 OLLAMA_URL      = os.getenv("OLLAMA_URL",      "http://localhost:11434")
-ANTHROPIC_KEY   = os.getenv("ANTHROPIC_API_KEY", "")
+LLM_API_KEY     = os.getenv("LLM_API_KEY", "")
+LLM_MODEL       = os.getenv("LLM_MODEL") or "claude-sonnet-4-20250514"
 
 
 @dataclass
@@ -76,13 +77,13 @@ class RiskReport:
 class RiskAgent:
     """
     Agente principal que orquestra as 4 APIs e gera relatorio.
-    Usa Claude API com fallback automatico para Ollama local.
+    Usa uma API de LLM com fallback automatico para Ollama local.
     """
 
     # Inicializa o agente com cliente HTTP e configuracoes de LLM
     def __init__(self) -> None:
         self._http = httpx.AsyncClient(timeout=30.0)
-        self._anthropic = anthropic.Anthropic(api_key=ANTHROPIC_KEY) if ANTHROPIC_KEY else None
+        self._llm = anthropic.Anthropic(api_key=LLM_API_KEY) if LLM_API_KEY else None
 
     # Executa a analise completa de risco para um cliente
     async def analyze(self, profile: ClientProfile) -> RiskReport:
@@ -183,7 +184,7 @@ class RiskAgent:
         r = await self._http.post(f"{API_DEFAULT}/predict", json=payload)
         return r.json()
 
-    # Gera narrativa em linguagem natural via Claude com fallback para Ollama
+    # Gera narrativa em linguagem natural via API de LLM com fallback para Ollama
     async def _generate_narrative(
         self, profile: ClientProfile,
         fraud: dict, seg: dict, credit: dict, default: dict
@@ -191,14 +192,14 @@ class RiskAgent:
 
         prompt = self._build_prompt(profile, fraud, seg, credit, default)
 
-        # Tenta Claude API primeiro
-        if self._anthropic and ANTHROPIC_KEY:
+        # Tenta a API de LLM primeiro
+        if self._llm and LLM_API_KEY:
             try:
                 return await asyncio.to_thread(
-                    self._call_claude, prompt
-                ), "claude"
+                    self._call_llm_api, prompt
+                ), "api"
             except Exception as e:
-                print(f"Claude API falhou: {e} — usando Ollama")
+                print(f"API de LLM falhou: {e} — usando Ollama")
 
         # Fallback para Ollama local
         try:
@@ -206,10 +207,10 @@ class RiskAgent:
         except Exception as e:
             return f"Erro ao gerar narrativa: {e}", "none"
 
-    # Chama a API Claude para gerar o relatorio
-    def _call_claude(self, prompt: str) -> str:
-        msg = self._anthropic.messages.create(
-            model="claude-sonnet-4-20250514",
+    # Chama a API de LLM para gerar o relatorio
+    def _call_llm_api(self, prompt: str) -> str:
+        msg = self._llm.messages.create(
+            model=LLM_MODEL,
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
